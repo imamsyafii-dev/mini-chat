@@ -11,8 +11,13 @@ func TestLoadUsesDefaults(
 ) {
 	result, err := load(
 		func(
-			string,
+			key string,
 		) (string, bool) {
+			if key ==
+				"MINI_CHAT_POSTGRES_URL" {
+				return " postgres://mini-chat-test ", true
+			}
+
 			return "", false
 		},
 	)
@@ -39,6 +44,15 @@ func TestLoadUsesDefaults(
 			defaultShutdownTimeout,
 		)
 	}
+
+	if result.PostgresURL !=
+		"postgres://mini-chat-test" {
+		t.Errorf(
+			"PostgresURL = %q, want %q",
+			result.PostgresURL,
+			"postgres://mini-chat-test",
+		)
+	}
 }
 
 func TestLoadUsesEnvironmentOverrides(
@@ -47,6 +61,7 @@ func TestLoadUsesEnvironmentOverrides(
 	values := map[string]string{
 		"MINI_CHAT_HTTP_ADDR":        " 127.0.0.1:29090 ",
 		"MINI_CHAT_SHUTDOWN_TIMEOUT": " 15s ",
+		"MINI_CHAT_POSTGRES_URL":     " postgres://mini-chat-override ",
 	}
 
 	result, err := load(
@@ -80,6 +95,15 @@ func TestLoadUsesEnvironmentOverrides(
 			"ShutdownTimeout = %v, want %v",
 			result.ShutdownTimeout,
 			15*time.Second,
+		)
+	}
+
+	if result.PostgresURL !=
+		"postgres://mini-chat-override" {
+		t.Errorf(
+			"PostgresURL = %q, want %q",
+			result.PostgresURL,
+			"postgres://mini-chat-override",
 		)
 	}
 }
@@ -126,6 +150,18 @@ func TestLoadRejectsInvalidEnvironment(
 				"MINI_CHAT_SHUTDOWN_TIMEOUT": "-1s",
 			},
 			wantErr: ErrShutdownTimeoutInvalid,
+		},
+		{
+			name:    "missing PostgreSQL URL",
+			values:  map[string]string{},
+			wantErr: ErrPostgresURLRequired,
+		},
+		{
+			name: "empty PostgreSQL URL",
+			values: map[string]string{
+				"MINI_CHAT_POSTGRES_URL": " ",
+			},
+			wantErr: ErrPostgresURLRequired,
 		},
 	}
 

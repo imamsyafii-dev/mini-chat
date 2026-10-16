@@ -20,11 +20,15 @@ var (
 	ErrShutdownTimeoutInvalid = errors.New(
 		"shutdown timeout is invalid",
 	)
+	ErrPostgresURLRequired = errors.New(
+		"PostgreSQL URL is required",
+	)
 )
 
 type Config struct {
 	HTTPAddr        string
 	ShutdownTimeout time.Duration
+	PostgresURL     string
 }
 
 type lookupEnvFunc func(
@@ -85,6 +89,23 @@ func load(
 
 		result.ShutdownTimeout = timeout
 	}
+
+	postgresURL, exists :=
+		lookupEnv("MINI_CHAT_POSTGRES_URL")
+	if !exists {
+		return Config{},
+			ErrPostgresURLRequired
+	}
+
+	postgresURL = strings.TrimSpace(
+		postgresURL,
+	)
+	if postgresURL == "" {
+		return Config{},
+			ErrPostgresURLRequired
+	}
+
+	result.PostgresURL = postgresURL
 
 	return result, nil
 }

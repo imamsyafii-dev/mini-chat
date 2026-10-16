@@ -12,8 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	registerapp "github.com/imamsyafii-dev/mini-chat/server/internal/app/register"
 	"github.com/imamsyafii-dev/mini-chat/server/internal/config"
 	"github.com/imamsyafii-dev/mini-chat/server/internal/httpapi"
+	"github.com/imamsyafii-dev/mini-chat/server/internal/security/password"
+	postgresstore "github.com/imamsyafii-dev/mini-chat/server/internal/store/postgres"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
@@ -47,6 +51,42 @@ func run() error {
 	)
 	defer stop()
 
+	database, err := pgxpool.New(
+		ctx,
+		cfg.PostgresURL,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"open PostgreSQL: %w",
+			err,
+		)
+	}
+	defer database.Close()
+
+	if err := database.Ping(ctx); err != nil {
+		return fmt.Errorf(
+			"ping PostgreSQL: %w",
+			err,
+		)
+	}
+
+	identityStore :=
+		postgresstore.NewIdentityStore(
+			database,
+		)
+	passwordHasher :=
+		password.NewArgon2IDHasher()
+	registerUseCase := registerapp.New(
+		identityStore,
+		passwordHasher,
+	)
+	handler :=
+		httpapi.NewHandlerWithDependencies(
+			httpapi.Dependencies{
+				Register: registerUseCase,
+			},
+		)
+
 	listener, err := net.Listen(
 		"tcp",
 		cfg.HTTPAddr,
@@ -61,7 +101,7 @@ func run() error {
 	defer listener.Close()
 
 	server := &http.Server{
-		Handler:           httpapi.NewHandler(),
+		Handler:           handler,
 		ReadHeaderTimeout: serverReadHeaderTimeout,
 		IdleTimeout:       serverIdleTimeout,
 		MaxHeaderBytes:    serverMaxHeaderBytes,

@@ -196,10 +196,21 @@ schema, tambahkan file migration baru dan jangan mengedit migration lama.
 
 ## Menjalankan server
 
-Masuk ke folder server:
+Server memerlukan PostgreSQL yang aktif dan seluruh migration sudah diterapkan.
+Jalankan terlebih dahulu langkah pada bagian "Menjalankan PostgreSQL dan Redis"
+dan "Menjalankan database migration" di atas.
+
+Masuk ke folder server, muat konfigurasi Docker, lalu buat URL koneksi
+PostgreSQL:
 
 ```bash
 cd server
+
+set -a
+source ../docker/.env
+set +a
+
+export MINI_CHAT_POSTGRES_URL="postgres://mini_chat:${MINI_CHAT_POSTGRES_PASSWORD}@127.0.0.1:25432/mini_chat?sslmode=disable"
 ```
 
 Jalankan server:
@@ -207,6 +218,10 @@ Jalankan server:
 ```bash
 go run .
 ```
+
+Sebelum mulai menerima request, server membuat connection pool dan melakukan
+`Ping` ke PostgreSQL. Server tidak akan mulai listening jika koneksi database
+gagal.
 
 Secara default, server berjalan di:
 
@@ -235,6 +250,95 @@ go run .
 ```
 
 Untuk menghentikan server secara aman, tekan `Ctrl+C`.
+
+## Register identity
+
+Endpoint register:
+
+```text
+POST /auth/register
+Content-Type: application/json
+```
+
+Request hanya menerima tiga field berikut:
+
+| Field | Aturan |
+|---|---|
+| `username` | Wajib, 3–40 karakter, hanya `a-z`, `0-9`, dan underscore (`_`) |
+| `password` | Wajib, 8–128 karakter |
+| `display_name` | Wajib, maksimal 100 karakter |
+
+Register tidak menggunakan atau menerima field `email`. Username dirapikan
+dengan menghapus spasi di awal dan akhir serta mengubahnya menjadi huruf kecil.
+
+Alur register di server:
+
+```text
+HTTP request
+  → domain validation dan normalization
+  → Argon2id password hashing
+  → PostgreSQL identity store
+  → HTTP response
+```
+
+Password asli hanya digunakan selama proses register. Database menyimpan hash
+Argon2id, sedangkan response tidak pernah mengembalikan password maupun
+`password_hash`.
+
+Dengan server dan PostgreSQL masih berjalan, buat identity baru:
+
+```bash
+curl -i \
+  -X POST http://127.0.0.1:28080/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "username": "alice_step5",
+    "password": "practice-password",
+    "display_name": "Alice Example"
+  }'
+```
+
+Request pertama menghasilkan `HTTP/1.1 201 Created`. Response berisi `id`,
+`username`, `display_name`, `created_at`, dan `updated_at`, tanpa password atau
+hash.
+
+Mengirim ulang request dengan username yang sama menghasilkan:
+
+```text
+HTTP/1.1 409 Conflict
+```
+
+Request dengan data yang tidak valid atau field yang tidak dikenal, termasuk
+`email`, menghasilkan:
+
+```text
+HTTP/1.1 400 Bad Request
+```
+
+Contoh pemeriksaan data langsung dari folder `docker`:
+
+```bash
+docker compose exec postgres \
+  psql -U mini_chat -d mini_chat \
+  -c "
+    SELECT
+      id,
+      username,
+      display_name,
+      LEFT(password_hash, 40) AS password_hash_prefix,
+      created_at
+    FROM identity
+    ORDER BY created_at;
+  "
+```
+
+Nilai `password_hash_prefix` dimulai dengan:
+
+```text
+$argon2id$v=19$m=19456,t=2,p=1$
+```
+
+Password asli tidak boleh terlihat pada tabel maupun response HTTP.
 
 ## Development rules
 
