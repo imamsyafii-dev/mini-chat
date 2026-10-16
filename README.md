@@ -75,6 +75,13 @@ Folder dibuat bertahap ketika mulai digunakan.
 
 Android emulator mengakses server Mac melalui `10.0.2.2:28080`.
 
+## Menjalankan server
+
+Masuk ke folder server:
+
+```bash
+cd server
+
 ## Development rules
 
 - Satu commit untuk satu milestone yang selesai.

@@ -1,0 +1,164 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/imamsyafii-dev/mini-chat/server/internal/config"
+	"github.com/imamsyafii-dev/mini-chat/server/internal/httpapi"
+)
+
+const (
+	serverReadHeaderTimeout = 5 * time.Second
+	serverIdleTimeout       = 60 * time.Second
+	serverMaxHeaderBytes    = 1 << 20
+)
+
+func main() {
+	if err := run(); err != nil {
+		log.Fatalf(
+			"mini chat server: %v",
+			err,
+		)
+	}
+}
+
+func run() error {
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf(
+			"load config: %w",
+			err,
+		)
+	}
+
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stop()
+
+	listener, err := net.Listen(
+		"tcp",
+		cfg.HTTPAddr,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"listen on %s: %w",
+			cfg.HTTPAddr,
+			err,
+		)
+	}
+	defer listener.Close()
+
+	server := &http.Server{
+		Handler:           httpapi.NewHandler(),
+		ReadHeaderTimeout: serverReadHeaderTimeout,
+		IdleTimeout:       serverIdleTimeout,
+		MaxHeaderBytes:    serverMaxHeaderBytes,
+	}
+
+	log.Printf(
+		"mini chat server listening on http://%s",
+		listener.Addr(),
+	)
+
+	if err := serve(
+		ctx,
+		listener,
+		server,
+		cfg.ShutdownTimeout,
+	); err != nil {
+		return err
+	}
+
+	log.Print(
+		"mini chat server stopped",
+	)
+
+	return nil
+}
+
+func serve(
+	ctx context.Context,
+	listener net.Listener,
+	server *http.Server,
+	shutdownTimeout time.Duration,
+) error {
+	serverErrors := make(
+		chan error,
+		1,
+	)
+
+	go func() {
+		serverErrors <- server.Serve(
+			listener,
+		)
+	}()
+
+	select {
+	case err := <-serverErrors:
+		if err == nil ||
+			errors.Is(
+				err,
+				http.ErrServerClosed,
+			) {
+			return nil
+		}
+
+		return fmt.Errorf(
+			"serve HTTP: %w",
+			err,
+		)
+
+	case <-ctx.Done():
+	}
+
+	shutdownCtx, cancel :=
+		context.WithTimeout(
+			context.Background(),
+			shutdownTimeout,
+		)
+	defer cancel()
+
+	if err := server.Shutdown(
+		shutdownCtx,
+	); err != nil {
+		closeErr := server.Close()
+		if closeErr != nil {
+			return fmt.Errorf(
+				"shutdown HTTP server: %w; force close: %v",
+				err,
+				closeErr,
+			)
+		}
+
+		return fmt.Errorf(
+			"shutdown HTTP server: %w",
+			err,
+		)
+	}
+
+	err := <-serverErrors
+	if err != nil &&
+		!errors.Is(
+			err,
+			http.ErrServerClosed,
+		) {
+		return fmt.Errorf(
+			"serve HTTP after shutdown: %w",
+			err,
+		)
+	}
+
+	return nil
+}
