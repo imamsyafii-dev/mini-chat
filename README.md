@@ -66,7 +66,7 @@ Folder dibuat bertahap ketika mulai digunakan.
 |---|---|
 | HTTP dan WebSocket server | `localhost:28080` |
 | PostgreSQL host port | `25432` |
-| Redis host port | `26379` |
+| Redis host port | `26380` |
 | Database | `mini_chat` |
 | Environment prefix | `MINI_CHAT_` |
 | Docker Compose project | `mini-chat` |
@@ -74,6 +74,68 @@ Folder dibuat bertahap ketika mulai digunakan.
 | Tauri identifier | `dev.imamsyafii.minichat` |
 
 Android emulator mengakses server Mac melalui `10.0.2.2:28080`.
+
+## Menjalankan PostgreSQL dan Redis
+
+Pertama kali, masuk ke folder Docker dan buat konfigurasi lokal:
+
+```bash
+cd docker
+cp .env.example .env
+```
+
+Ubah nilai `MINI_CHAT_POSTGRES_PASSWORD` di `.env`. File `.env` hanya digunakan
+secara lokal dan tidak boleh masuk Git.
+
+Validasi dan jalankan service:
+
+```bash
+docker compose config --quiet
+docker compose up -d
+docker compose ps
+```
+
+Periksa PostgreSQL:
+
+```bash
+docker compose exec postgres \
+  psql -U mini_chat -d mini_chat -c "SELECT 1;"
+```
+
+Periksa Redis:
+
+```bash
+docker compose exec redis redis-cli ping
+```
+
+Aplikasi server yang berjalan langsung di Mac menggunakan:
+
+```text
+PostgreSQL: localhost:25432
+Redis:      localhost:26380
+```
+
+Service yang berjalan di network Docker menggunakan:
+
+```text
+PostgreSQL: postgres:5432
+Redis:      redis:6379
+```
+
+Untuk menghentikan container tanpa menghapus data PostgreSQL:
+
+```bash
+docker compose down
+```
+
+Untuk menghapus container sekaligus data PostgreSQL lokal:
+
+```bash
+docker compose down -v
+```
+
+Perintah `down -v` bersifat destruktif dan hanya digunakan ketika ingin
+mereset database lokal.
 
 ## Menjalankan server
 

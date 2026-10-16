@@ -8,7 +8,7 @@ satu commit.
 
 - [x] Step 1: menetapkan project contract dan roadmap
 - [x] Step 2: membuat Go server, config, health endpoint, dan graceful shutdown
-- [ ] Step 3: menjalankan PostgreSQL dan Redis melalui Docker Compose
+- [x] Step 3: menjalankan PostgreSQL dan Redis melalui Docker Compose
 - [ ] Step 4: membuat migration identity, conversation, member, dan message
 - [ ] Step 5: membuat register, Argon2id password hashing, dan persistence
 - [ ] Step 6: membuat login, JWT authentication, dan current-user endpoint
