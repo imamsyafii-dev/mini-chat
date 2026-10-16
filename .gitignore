@@ -1,0 +1,40 @@
+# macOS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Logs and test output
+*.log
+coverage/
+coverage.out
+
+# Go
+server/bin/
+server/*.test
+
+# Node
+**/node_modules/
+**/dist/
+**/.vite/
+
+# Rust and Tauri
+desktop/src-tauri/target/
+
+# React Native local files
+mobile/android/local.properties
+mobile/android/.gradle/
+mobile/android/build/
+mobile/android/app/build/
+mobile/ios/Pods/
+mobile/ios/build/
