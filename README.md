@@ -137,6 +137,63 @@ docker compose down -v
 Perintah `down -v` bersifat destruktif dan hanya digunakan ketika ingin
 mereset database lokal.
 
+## Menjalankan database migration
+
+File migration berada di `server/db/migrations` dan dijalankan berurutan oleh
+Goose.
+
+Pastikan PostgreSQL sudah berjalan, lalu siapkan koneksi dari folder server:
+
+```bash
+cd server
+
+set -a
+source ../docker/.env
+set +a
+
+export MINI_CHAT_POSTGRES_URL="postgres://mini_chat:${MINI_CHAT_POSTGRES_PASSWORD}@localhost:25432/mini_chat?sslmode=disable"
+```
+
+Terapkan seluruh migration:
+
+```bash
+go tool goose \
+  -dir db/migrations \
+  postgres "$MINI_CHAT_POSTGRES_URL" \
+  up
+```
+
+Periksa status migration:
+
+```bash
+go tool goose \
+  -dir db/migrations \
+  postgres "$MINI_CHAT_POSTGRES_URL" \
+  status
+```
+
+Rollback satu migration terakhir:
+
+```bash
+go tool goose \
+  -dir db/migrations \
+  postgres "$MINI_CHAT_POSTGRES_URL" \
+  down
+```
+
+Perintah `down` dapat menghapus tabel atau data. Gunakan hanya ketika memahami
+isi bagian `-- +goose Down` pada migration yang akan dibatalkan.
+
+Bersihkan variable koneksi setelah selesai:
+
+```bash
+unset MINI_CHAT_POSTGRES_URL
+unset MINI_CHAT_POSTGRES_PASSWORD
+```
+
+Migration yang sudah masuk repository bersifat append-only. Untuk mengubah
+schema, tambahkan file migration baru dan jangan mengedit migration lama.
+
 ## Menjalankan server
 
 Masuk ke folder server:
