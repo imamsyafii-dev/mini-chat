@@ -11,6 +11,8 @@ import (
 const (
 	defaultHTTPAddr        = ":28080"
 	defaultShutdownTimeout = 10 * time.Second
+	defaultAccessTokenTTL  = time.Hour
+	minimumJWTSecretBytes  = 32
 )
 
 var (
@@ -23,12 +25,20 @@ var (
 	ErrPostgresURLRequired = errors.New(
 		"PostgreSQL URL is required",
 	)
+	ErrJWTSecretInvalid = errors.New(
+		"JWT secret is invalid",
+	)
+	ErrAccessTokenTTLInvalid = errors.New(
+		"access token TTL is invalid",
+	)
 )
 
 type Config struct {
 	HTTPAddr        string
 	ShutdownTimeout time.Duration
 	PostgresURL     string
+	JWTSecret       string
+	AccessTokenTTL  time.Duration
 }
 
 type lookupEnvFunc func(
@@ -45,6 +55,7 @@ func load(
 	result := Config{
 		HTTPAddr:        defaultHTTPAddr,
 		ShutdownTimeout: defaultShutdownTimeout,
+		AccessTokenTTL:  defaultAccessTokenTTL,
 	}
 
 	if value, exists :=
@@ -106,6 +117,45 @@ func load(
 	}
 
 	result.PostgresURL = postgresURL
+
+	jwtSecret, exists :=
+		lookupEnv("MINI_CHAT_JWT_SECRET")
+	if !exists ||
+		len(strings.TrimSpace(jwtSecret)) == 0 ||
+		len([]byte(jwtSecret)) < minimumJWTSecretBytes {
+		return Config{}, ErrJWTSecretInvalid
+	}
+
+	result.JWTSecret = jwtSecret
+
+	if value, exists := lookupEnv(
+		"MINI_CHAT_ACCESS_TOKEN_TTL",
+	); exists {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return Config{},
+				ErrAccessTokenTTLInvalid
+		}
+
+		ttl, err := time.ParseDuration(value)
+		if err != nil {
+			return Config{},
+				fmt.Errorf(
+					"%w: invalid duration",
+					ErrAccessTokenTTLInvalid,
+				)
+		}
+
+		if ttl <= 0 {
+			return Config{},
+				fmt.Errorf(
+					"%w: must be positive",
+					ErrAccessTokenTTLInvalid,
+				)
+		}
+
+		result.AccessTokenTTL = ttl
+	}
 
 	return result, nil
 }

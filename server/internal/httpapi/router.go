@@ -6,7 +6,10 @@ import (
 )
 
 type Dependencies struct {
-	Register Registerer
+	Register            Registerer
+	Login               LoginUseCase
+	AccessTokenVerifier AccessTokenVerifier
+	CurrentUser         CurrentUserUseCase
 }
 
 type healthResponse struct {
@@ -34,6 +37,28 @@ func NewHandlerWithDependencies(
 			"POST /auth/register",
 			newRegisterHandler(
 				dependencies.Register,
+			),
+		)
+	}
+
+	if dependencies.Login != nil {
+		mux.Handle(
+			"POST /auth/login",
+			newLoginHandler(
+				dependencies.Login,
+			),
+		)
+	}
+
+	if dependencies.AccessTokenVerifier != nil &&
+		dependencies.CurrentUser != nil {
+		mux.Handle(
+			"GET /auth/me",
+			requireAuthentication(
+				dependencies.AccessTokenVerifier,
+				newCurrentUserHandler(
+					dependencies.CurrentUser,
+				),
 			),
 		)
 	}

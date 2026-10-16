@@ -8,7 +8,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/imamsyafii-dev/mini-chat/server/internal/app/register"
+	currentuserapp "github.com/imamsyafii-dev/mini-chat/server/internal/app/currentuser"
+	loginapp "github.com/imamsyafii-dev/mini-chat/server/internal/app/login"
+	registerapp "github.com/imamsyafii-dev/mini-chat/server/internal/app/register"
 	"github.com/imamsyafii-dev/mini-chat/server/internal/domain/identity"
 )
 
@@ -26,6 +28,27 @@ RETURNING
     display_name,
     created_at,
     updated_at
+`
+	findIdentityByUsernameQuery = `
+SELECT
+    id,
+    username,
+    password_hash,
+    display_name,
+    created_at,
+    updated_at
+FROM identity
+WHERE username = $1
+`
+	findIdentityByIDQuery = `
+SELECT
+    id,
+    username,
+    display_name,
+    created_at,
+    updated_at
+FROM identity
+WHERE id = $1
 `
 	uniqueViolationCode      = "23505"
 	usernameUniqueConstraint = "identity_username_unique"
@@ -55,7 +78,7 @@ func (
 	store *IdentityStore,
 ) CreateIdentity(
 	ctx context.Context,
-	params register.CreateIdentityParams,
+	params registerapp.CreateIdentityParams,
 ) (identity.Identity, error) {
 	var result identity.Identity
 
@@ -96,4 +119,82 @@ func (
 	return result, nil
 }
 
-var _ register.IdentityStore = (*IdentityStore)(nil)
+func (
+	store *IdentityStore,
+) FindIdentityByUsername(
+	ctx context.Context,
+	username string,
+) (identity.Identity, string, error) {
+	var result identity.Identity
+	var passwordHash string
+
+	err := store.db.QueryRow(
+		ctx,
+		findIdentityByUsernameQuery,
+		username,
+	).Scan(
+		&result.ID,
+		&result.Username,
+		&passwordHash,
+		&result.DisplayName,
+		&result.CreatedAt,
+		&result.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return identity.Identity{}, "",
+			fmt.Errorf(
+				"find identity by username: %w",
+				identity.ErrNotFound,
+			)
+	}
+	if err != nil {
+		return identity.Identity{}, "",
+			fmt.Errorf(
+				"find identity by username: %w",
+				err,
+			)
+	}
+
+	return result, passwordHash, nil
+}
+
+func (
+	store *IdentityStore,
+) FindIdentityByID(
+	ctx context.Context,
+	identityID int64,
+) (identity.Identity, error) {
+	var result identity.Identity
+
+	err := store.db.QueryRow(
+		ctx,
+		findIdentityByIDQuery,
+		identityID,
+	).Scan(
+		&result.ID,
+		&result.Username,
+		&result.DisplayName,
+		&result.CreatedAt,
+		&result.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return identity.Identity{}, fmt.Errorf(
+			"find identity by ID: %w",
+			identity.ErrNotFound,
+		)
+	}
+	if err != nil {
+		return identity.Identity{}, fmt.Errorf(
+			"find identity by ID: %w",
+			err,
+		)
+	}
+
+	return result, nil
+}
+
+var _ registerapp.IdentityStore = (*IdentityStore)(nil)
+
+var _ loginapp.IdentityStore = (*IdentityStore)(nil)
+
+var _ currentuserapp.IdentityStore = (*IdentityStore)(nil)

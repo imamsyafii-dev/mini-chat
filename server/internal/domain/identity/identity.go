@@ -28,6 +28,12 @@ var (
 	ErrUsernameTaken = errors.New(
 		"username is already registered",
 	)
+	ErrInvalidCredentials = errors.New(
+		"invalid credentials",
+	)
+	ErrNotFound = errors.New(
+		"identity not found",
+	)
 )
 
 type Identity struct {
@@ -44,14 +50,17 @@ type Registration struct {
 	DisplayName string
 }
 
+type LoginCredentials struct {
+	Username string
+	Password string
+}
+
 func NewRegistration(
 	username string,
 	password string,
 	displayName string,
 ) (Registration, error) {
-	username = strings.ToLower(
-		strings.TrimSpace(username),
-	)
+	username = normalizeUsername(username)
 	displayName = strings.TrimSpace(
 		displayName,
 	)
@@ -61,11 +70,7 @@ func NewRegistration(
 			ErrUsernameInvalid
 	}
 
-	passwordLength :=
-		utf8.RuneCountInString(password)
-	if passwordLength < MinPasswordLength ||
-		passwordLength > MaxPasswordLength ||
-		strings.TrimSpace(password) == "" {
+	if !validPassword(password) {
 		return Registration{},
 			ErrPasswordInvalid
 	}
@@ -84,6 +89,32 @@ func NewRegistration(
 		Password:    password,
 		DisplayName: displayName,
 	}, nil
+}
+
+func NewLoginCredentials(
+	username string,
+	password string,
+) (LoginCredentials, error) {
+	username = normalizeUsername(username)
+
+	if !validUsername(username) ||
+		!validPassword(password) {
+		return LoginCredentials{},
+			ErrInvalidCredentials
+	}
+
+	return LoginCredentials{
+		Username: username,
+		Password: password,
+	}, nil
+}
+
+func normalizeUsername(
+	username string,
+) string {
+	return strings.ToLower(
+		strings.TrimSpace(username),
+	)
 }
 
 func validUsername(
@@ -111,4 +142,14 @@ func validUsername(
 	}
 
 	return true
+}
+
+func validPassword(
+	password string,
+) bool {
+	length := utf8.RuneCountInString(password)
+
+	return length >= MinPasswordLength &&
+		length <= MaxPasswordLength &&
+		strings.TrimSpace(password) != ""
 }

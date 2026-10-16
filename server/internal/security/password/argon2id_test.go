@@ -121,3 +121,46 @@ func TestArgon2IDHasherHonorsCanceledContext(
 		)
 	}
 }
+
+func TestArgon2IDHasherVerifyDummy(
+	t *testing.T,
+) {
+	hasher := NewArgon2IDHasher()
+
+	err := hasher.VerifyDummy(
+		context.Background(),
+		"practice-password",
+	)
+	if err != nil {
+		t.Fatalf(
+			"VerifyDummy() error = %v, want nil",
+			err,
+		)
+	}
+}
+
+func TestArgon2IDHasherVerifyDummyHonorsCanceledContext(
+	t *testing.T,
+) {
+	hasher := NewArgon2IDHasher()
+
+	ctx, cancel := context.WithCancel(
+		context.Background(),
+	)
+	cancel()
+
+	err := hasher.VerifyDummy(
+		ctx,
+		"practice-password",
+	)
+	if !errors.Is(
+		err,
+		context.Canceled,
+	) {
+		t.Fatalf(
+			"VerifyDummy() error = %v, want %v",
+			err,
+			context.Canceled,
+		)
+	}
+}

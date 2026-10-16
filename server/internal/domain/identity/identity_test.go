@@ -137,3 +137,99 @@ func TestNewRegistrationRejectsInvalidInput(
 		)
 	}
 }
+
+func TestNewLoginCredentialsNormalizesUsernameAndPreservesPassword(
+	t *testing.T,
+) {
+	const password = "  practice-password  "
+
+	result, err := NewLoginCredentials(
+		"  Alice_01  ",
+		password,
+	)
+	if err != nil {
+		t.Fatalf(
+			"NewLoginCredentials() error = %v, want nil",
+			err,
+		)
+	}
+
+	if result.Username != "alice_01" {
+		t.Errorf(
+			"Username = %q, want %q",
+			result.Username,
+			"alice_01",
+		)
+	}
+
+	if result.Password != password {
+		t.Errorf(
+			"Password = %q, want password preserved byte-for-byte",
+			result.Password,
+		)
+	}
+}
+
+func TestNewLoginCredentialsRejectsInvalidCredentials(
+	t *testing.T,
+) {
+	tests := []struct {
+		name     string
+		username string
+		password string
+	}{
+		{
+			name:     "username too short",
+			username: "ab",
+			password: "practice-password",
+		},
+		{
+			name:     "username too long",
+			username: strings.Repeat("a", MaxUsernameLength+1),
+			password: "practice-password",
+		},
+		{
+			name:     "username contains unsupported character",
+			username: "alice.smith",
+			password: "practice-password",
+		},
+		{
+			name:     "password too short",
+			username: "alice",
+			password: "short",
+		},
+		{
+			name:     "password too long",
+			username: "alice",
+			password: strings.Repeat("a", MaxPasswordLength+1),
+		},
+		{
+			name:     "password only contains spaces",
+			username: "alice",
+			password: strings.Repeat(" ", MinPasswordLength),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(
+			test.name,
+			func(t *testing.T) {
+				_, err := NewLoginCredentials(
+					test.username,
+					test.password,
+				)
+
+				if !errors.Is(
+					err,
+					ErrInvalidCredentials,
+				) {
+					t.Fatalf(
+						"error = %v, want %v",
+						err,
+						ErrInvalidCredentials,
+					)
+				}
+			},
+		)
+	}
+}

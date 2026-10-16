@@ -13,9 +13,11 @@ func TestLoadUsesDefaults(
 		func(
 			key string,
 		) (string, bool) {
-			if key ==
-				"MINI_CHAT_POSTGRES_URL" {
+			switch key {
+			case "MINI_CHAT_POSTGRES_URL":
 				return " postgres://mini-chat-test ", true
+			case "MINI_CHAT_JWT_SECRET":
+				return "0123456789abcdef0123456789abcdef", true
 			}
 
 			return "", false
@@ -53,6 +55,22 @@ func TestLoadUsesDefaults(
 			"postgres://mini-chat-test",
 		)
 	}
+
+	if result.JWTSecret !=
+		"0123456789abcdef0123456789abcdef" {
+		t.Errorf(
+			"JWTSecret was not preserved",
+		)
+	}
+
+	if result.AccessTokenTTL !=
+		defaultAccessTokenTTL {
+		t.Errorf(
+			"AccessTokenTTL = %v, want %v",
+			result.AccessTokenTTL,
+			defaultAccessTokenTTL,
+		)
+	}
 }
 
 func TestLoadUsesEnvironmentOverrides(
@@ -62,6 +80,8 @@ func TestLoadUsesEnvironmentOverrides(
 		"MINI_CHAT_HTTP_ADDR":        " 127.0.0.1:29090 ",
 		"MINI_CHAT_SHUTDOWN_TIMEOUT": " 15s ",
 		"MINI_CHAT_POSTGRES_URL":     " postgres://mini-chat-override ",
+		"MINI_CHAT_JWT_SECRET":       "  0123456789abcdef0123456789abcdef  ",
+		"MINI_CHAT_ACCESS_TOKEN_TTL": " 45m ",
 	}
 
 	result, err := load(
@@ -106,6 +126,20 @@ func TestLoadUsesEnvironmentOverrides(
 			"postgres://mini-chat-override",
 		)
 	}
+
+	if result.JWTSecret !=
+		"  0123456789abcdef0123456789abcdef  " {
+		t.Errorf("JWTSecret was not preserved")
+	}
+
+	if result.AccessTokenTTL !=
+		45*time.Minute {
+		t.Errorf(
+			"AccessTokenTTL = %v, want %v",
+			result.AccessTokenTTL,
+			45*time.Minute,
+		)
+	}
 }
 
 func TestLoadRejectsInvalidEnvironment(
@@ -114,6 +148,7 @@ func TestLoadRejectsInvalidEnvironment(
 	tests := []struct {
 		name    string
 		values  map[string]string
+		unset   []string
 		wantErr error
 	}{
 		{
@@ -153,7 +188,7 @@ func TestLoadRejectsInvalidEnvironment(
 		},
 		{
 			name:    "missing PostgreSQL URL",
-			values:  map[string]string{},
+			unset:   []string{"MINI_CHAT_POSTGRES_URL"},
 			wantErr: ErrPostgresURLRequired,
 		},
 		{
@@ -163,18 +198,75 @@ func TestLoadRejectsInvalidEnvironment(
 			},
 			wantErr: ErrPostgresURLRequired,
 		},
+		{
+			name:    "missing JWT secret",
+			unset:   []string{"MINI_CHAT_JWT_SECRET"},
+			wantErr: ErrJWTSecretInvalid,
+		},
+		{
+			name: "empty JWT secret",
+			values: map[string]string{
+				"MINI_CHAT_JWT_SECRET": "                                ",
+			},
+			wantErr: ErrJWTSecretInvalid,
+		},
+		{
+			name: "short JWT secret",
+			values: map[string]string{
+				"MINI_CHAT_JWT_SECRET": "too-short",
+			},
+			wantErr: ErrJWTSecretInvalid,
+		},
+		{
+			name: "empty access token TTL",
+			values: map[string]string{
+				"MINI_CHAT_ACCESS_TOKEN_TTL": " ",
+			},
+			wantErr: ErrAccessTokenTTLInvalid,
+		},
+		{
+			name: "malformed access token TTL",
+			values: map[string]string{
+				"MINI_CHAT_ACCESS_TOKEN_TTL": "one-hour",
+			},
+			wantErr: ErrAccessTokenTTLInvalid,
+		},
+		{
+			name: "zero access token TTL",
+			values: map[string]string{
+				"MINI_CHAT_ACCESS_TOKEN_TTL": "0s",
+			},
+			wantErr: ErrAccessTokenTTLInvalid,
+		},
+		{
+			name: "negative access token TTL",
+			values: map[string]string{
+				"MINI_CHAT_ACCESS_TOKEN_TTL": "-1s",
+			},
+			wantErr: ErrAccessTokenTTLInvalid,
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(
 			test.name,
 			func(t *testing.T) {
+				values := map[string]string{
+					"MINI_CHAT_POSTGRES_URL": "postgres://mini-chat-test",
+					"MINI_CHAT_JWT_SECRET":   "0123456789abcdef0123456789abcdef",
+				}
+				for key, value := range test.values {
+					values[key] = value
+				}
+				for _, key := range test.unset {
+					delete(values, key)
+				}
+
 				_, err := load(
 					func(
 						key string,
 					) (string, bool) {
-						value, exists :=
-							test.values[key]
+						value, exists := values[key]
 
 						return value, exists
 					},

@@ -12,10 +12,13 @@ import (
 	"syscall"
 	"time"
 
+	currentuserapp "github.com/imamsyafii-dev/mini-chat/server/internal/app/currentuser"
+	loginapp "github.com/imamsyafii-dev/mini-chat/server/internal/app/login"
 	registerapp "github.com/imamsyafii-dev/mini-chat/server/internal/app/register"
 	"github.com/imamsyafii-dev/mini-chat/server/internal/config"
 	"github.com/imamsyafii-dev/mini-chat/server/internal/httpapi"
 	"github.com/imamsyafii-dev/mini-chat/server/internal/security/password"
+	"github.com/imamsyafii-dev/mini-chat/server/internal/security/token"
 	postgresstore "github.com/imamsyafii-dev/mini-chat/server/internal/store/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -40,6 +43,17 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf(
 			"load config: %w",
+			err,
+		)
+	}
+
+	tokenManager, err := token.NewJWTManager(
+		[]byte(cfg.JWTSecret),
+		cfg.AccessTokenTTL,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"create JWT manager: %w",
 			err,
 		)
 	}
@@ -80,10 +94,21 @@ func run() error {
 		identityStore,
 		passwordHasher,
 	)
+	loginUseCase := loginapp.New(
+		identityStore,
+		passwordHasher,
+		tokenManager,
+	)
+	currentUserUseCase := currentuserapp.New(
+		identityStore,
+	)
 	handler :=
 		httpapi.NewHandlerWithDependencies(
 			httpapi.Dependencies{
-				Register: registerUseCase,
+				Register:            registerUseCase,
+				Login:               loginUseCase,
+				AccessTokenVerifier: tokenManager,
+				CurrentUser:         currentUserUseCase,
 			},
 		)
 

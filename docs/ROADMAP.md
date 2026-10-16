@@ -11,7 +11,7 @@ satu commit.
 - [x] Step 3: menjalankan PostgreSQL dan Redis melalui Docker Compose
 - [x] Step 4: membuat migration identity, conversation, member, dan message
 - [x] Step 5: membuat register, Argon2id password hashing, dan persistence
-- [ ] Step 6: membuat login, JWT authentication, dan current-user endpoint
+- [x] Step 6: membuat login, JWT authentication, dan current-user endpoint
 - [ ] Step 7: membuat direct conversation serta HTTP send/history message
 
 ## Hari 2 — Realtime

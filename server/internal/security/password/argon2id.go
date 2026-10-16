@@ -22,6 +22,9 @@ const (
 	maxConcurrentHash        = 2
 
 	passwordHashPrefix = "$argon2id$v=19$m=19456,t=2,p=1$"
+	dummyPasswordHash  = passwordHashPrefix +
+		"AAAAAAAAAAAAAAAAAAAAAA$" +
+		"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 )
 
 var ErrEncodedHashInvalid = errors.New(
@@ -130,6 +133,21 @@ func (
 		actualKey,
 		expectedKey,
 	) == 1, nil
+}
+
+func (
+	hasher *Argon2IDHasher,
+) VerifyDummy(
+	ctx context.Context,
+	plaintext string,
+) error {
+	_, err := hasher.Verify(
+		ctx,
+		plaintext,
+		dummyPasswordHash,
+	)
+
+	return err
 }
 
 func decodeHash(

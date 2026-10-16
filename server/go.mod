@@ -5,6 +5,7 @@ go 1.25.4
 tool github.com/pressly/goose/v3/cmd/goose
 
 require (
+	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/jackc/pgx/v5 v5.8.0
 	golang.org/x/crypto v0.48.0
 )
