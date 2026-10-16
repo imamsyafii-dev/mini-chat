@@ -81,6 +81,41 @@ Masuk ke folder server:
 
 ```bash
 cd server
+```
+
+Jalankan server:
+
+```bash
+go run .
+```
+
+Secara default, server berjalan di:
+
+```text
+http://localhost:28080
+```
+
+Periksa health endpoint:
+
+```bash
+curl -i http://localhost:28080/health
+```
+
+Respons yang diharapkan:
+
+```json
+{"status":"ok"}
+```
+
+Alamat server dan batas waktu graceful shutdown dapat diubah menggunakan environment variable:
+
+```bash
+MINI_CHAT_HTTP_ADDR=:28081 \
+MINI_CHAT_SHUTDOWN_TIMEOUT=15s \
+go run .
+```
+
+Untuk menghentikan server secara aman, tekan `Ctrl+C`.
 
 ## Development rules
 
