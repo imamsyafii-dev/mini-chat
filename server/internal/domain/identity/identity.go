@@ -60,15 +60,14 @@ func NewRegistration(
 	password string,
 	displayName string,
 ) (Registration, error) {
-	username = normalizeUsername(username)
+	username, err := NormalizeUsername(username)
+	if err != nil {
+		return Registration{}, err
+	}
+
 	displayName = strings.TrimSpace(
 		displayName,
 	)
-
-	if !validUsername(username) {
-		return Registration{},
-			ErrUsernameInvalid
-	}
 
 	if !validPassword(password) {
 		return Registration{},
@@ -95,10 +94,13 @@ func NewLoginCredentials(
 	username string,
 	password string,
 ) (LoginCredentials, error) {
-	username = normalizeUsername(username)
+	username, err := NormalizeUsername(username)
+	if err != nil {
+		return LoginCredentials{},
+			ErrInvalidCredentials
+	}
 
-	if !validUsername(username) ||
-		!validPassword(password) {
+	if !validPassword(password) {
 		return LoginCredentials{},
 			ErrInvalidCredentials
 	}
@@ -109,12 +111,18 @@ func NewLoginCredentials(
 	}, nil
 }
 
-func normalizeUsername(
+func NormalizeUsername(
 	username string,
-) string {
-	return strings.ToLower(
+) (string, error) {
+	username = strings.ToLower(
 		strings.TrimSpace(username),
 	)
+
+	if !validUsername(username) {
+		return "", ErrUsernameInvalid
+	}
+
+	return username, nil
 }
 
 func validUsername(

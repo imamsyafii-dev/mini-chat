@@ -534,6 +534,294 @@ Step ini hanya menyediakan access token. Belum ada refresh token, logout atau
 revocation, Redis-backed session, maupun sinkronisasi session multi-device yang
 kompleks.
 
+## Direct conversation
+
+Step 7 menyediakan pembuatan dan daftar direct conversation. Scope ini belum
+mencakup pengiriman pesan, riwayat pesan, Redis, atau WebSocket; fitur tersebut
+baru ditambahkan pada step berikutnya.
+
+### Model data dan aturan domain
+
+Satu direct conversation mempunyai dua participant. Domain selalu menyusun ID
+keduanya menjadi pasangan canonical:
+
+```text
+identity_low_id  = ID yang lebih kecil
+identity_high_id = ID yang lebih besar
+```
+
+Karena pasangan tersebut memiliki unique constraint, `Alice → Bob` dan
+`Bob → Alice` selalu menunjuk conversation yang sama. Membuat conversation
+dengan diri sendiri ditolak.
+
+Pembuatan data dilakukan dalam satu transaction yang mencakup:
+
+1. satu row `conversation`;
+2. satu row `direct_conversation` dengan pasangan canonical;
+3. dua row `conversation_member`.
+
+Identity yang pertama kali membuat conversation mendapat role `owner`,
+sedangkan identity lainnya mendapat role `member`. Request kebalikan yang
+dilakukan kemudian hanya mengambil conversation yang sudah ada sehingga tidak
+mengubah role tersebut. Jika dua request bersamaan mencoba membuat pasangan
+yang sama, unique constraint menentukan satu pemenang. Transaction yang kalah
+di-rollback lalu mengambil conversation pemenang, sehingga tidak meninggalkan
+conversation atau member yatim.
+
+### Dependency flow
+
+```text
+HTTP request + Bearer token
+  → authentication middleware
+  → Principal berisi identity ID
+  → create-direct atau list-conversations use case
+  → IdentityStore dan/atau ConversationStore
+  → PostgreSQL
+```
+
+Create-direct memakai `IdentityStore` untuk mencari profil publik penerima,
+kemudian memakai `ConversationStore` untuk membuat atau mengambil conversation.
+List-conversations langsung memakai `ConversationStore` karena alurnya hanya
+validasi actor ID dan pembacaan sederhana; tidak ada domain service tambahan
+yang diperlukan. Satu instance `ConversationStore` dibuat di `main.go` dan
+dipakai bersama oleh kedua use case.
+
+### Membuat direct conversation
+
+Endpoint berikut memerlukan access token:
+
+```text
+POST /conversations/direct
+Authorization: Bearer <access-token>
+Content-Type: application/json
+```
+
+Request:
+
+```json
+{
+  "recipient_username": "bob"
+}
+```
+
+Username penerima di-trim dan diubah menjadi huruf kecil menggunakan aturan
+domain identity yang sama dengan register dan login. Conversation baru
+menghasilkan `201 Created`. Pasangan yang sudah ada menghasilkan `200 OK`
+dengan ID conversation yang sama.
+
+Contoh response publik:
+
+```json
+{
+  "id": 10,
+  "kind": "direct",
+  "created_by": 1,
+  "participant": {
+    "id": 2,
+    "username": "bob",
+    "display_name": "Bob",
+    "created_at": "2026-10-17T08:00:00Z",
+    "updated_at": "2026-10-17T08:00:00Z"
+  },
+  "created_at": "2026-10-17T08:05:00Z",
+  "updated_at": "2026-10-17T08:05:00Z"
+}
+```
+
+Status error:
+
+| Status | Kondisi |
+|---|---|
+| `400 Bad Request` | JSON atau username tidak valid, field tidak dikenal, atau participant ID tidak valid |
+| `401 Unauthorized` | Bearer token hilang atau tidak valid |
+| `404 Not Found` | Username penerima tidak ditemukan |
+| `409 Conflict` | Mencoba membuat conversation dengan diri sendiri |
+| `413 Request Entity Too Large` | Body lebih dari 64 KiB |
+| `415 Unsupported Media Type` | `Content-Type` bukan `application/json` |
+| `500 Internal Server Error` | Kegagalan internal yang tidak aman untuk dijelaskan ke client |
+
+Response tidak pernah memuat password atau `password_hash`.
+
+### Melihat daftar conversation
+
+```text
+GET /conversations
+Authorization: Bearer <access-token>
+```
+
+Request berhasil menghasilkan `200 OK`. Bearer token yang hilang atau tidak
+valid menghasilkan `401 Unauthorized`, sedangkan kegagalan internal yang tidak
+aman dijelaskan ke client menghasilkan `500 Internal Server Error`.
+
+Response menggunakan array langsung. Field `participant` selalu berisi lawan
+bicara dari pengguna yang sedang login:
+
+```json
+[
+  {
+    "id": 10,
+    "kind": "direct",
+    "created_by": 1,
+    "participant": {
+      "id": 2,
+      "username": "bob",
+      "display_name": "Bob",
+      "created_at": "2026-10-17T08:00:00Z",
+      "updated_at": "2026-10-17T08:00:00Z"
+    },
+    "created_at": "2026-10-17T08:05:00Z",
+    "updated_at": "2026-10-17T08:05:00Z"
+  }
+]
+```
+
+Jika belum ada conversation, response adalah `[]`, bukan `null`. Server
+mengambil maksimal 50 conversation dengan urutan `updated_at DESC, id DESC`.
+Pada Step 7, `updated_at` belum menunjukkan aktivitas pesan terbaru karena
+message baru dibuat pada Step 8. Endpoint ini juga belum memiliki pagination.
+
+### Pengujian manual Step 7
+
+Pastikan PostgreSQL, migration, dan server sudah berjalan. Gunakan dua username
+unik, lalu masukkan password tanpa menampilkannya di terminal:
+
+```bash
+MINI_CHAT_RUN_ID=$(date +%Y%m%d%H%M%S)
+export ALICE_USERNAME="alice_${MINI_CHAT_RUN_ID}"
+export BOB_USERNAME="bob_${MINI_CHAT_RUN_ID}"
+read -s "MINI_CHAT_E2E_PASSWORD?Password E2E: "; echo
+export MINI_CHAT_E2E_PASSWORD
+```
+
+Register Alice dan Bob:
+
+```bash
+curl -i \
+  -X POST http://127.0.0.1:28080/auth/register \
+  -H 'Content-Type: application/json' \
+  -d "{\"username\":\"${ALICE_USERNAME}\",\"password\":\"${MINI_CHAT_E2E_PASSWORD}\",\"display_name\":\"Alice E2E\"}"
+
+curl -i \
+  -X POST http://127.0.0.1:28080/auth/register \
+  -H 'Content-Type: application/json' \
+  -d "{\"username\":\"${BOB_USERNAME}\",\"password\":\"${MINI_CHAT_E2E_PASSWORD}\",\"display_name\":\"Bob E2E\"}"
+```
+
+Login keduanya untuk mendapatkan access token:
+
+```bash
+curl -i \
+  -X POST http://127.0.0.1:28080/auth/login \
+  -H 'Content-Type: application/json' \
+  -d "{\"username\":\"${ALICE_USERNAME}\",\"password\":\"${MINI_CHAT_E2E_PASSWORD}\"}"
+
+curl -i \
+  -X POST http://127.0.0.1:28080/auth/login \
+  -H 'Content-Type: application/json' \
+  -d "{\"username\":\"${BOB_USERNAME}\",\"password\":\"${MINI_CHAT_E2E_PASSWORD}\"}"
+```
+
+Salin masing-masing `access_token` dari response dan simpan tanpa
+menampilkannya saat ditempel:
+
+```bash
+read -s "ALICE_TOKEN?Token Alice: "; echo
+read -s "BOB_TOKEN?Token Bob: "; echo
+export ALICE_TOKEN BOB_TOKEN
+```
+
+Buat conversation sebagai Alice:
+
+```bash
+curl -i \
+  -X POST http://127.0.0.1:28080/conversations/direct \
+  -H "Authorization: Bearer ${ALICE_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d "{\"recipient_username\":\"${BOB_USERNAME}\"}"
+```
+
+Request pertama harus menghasilkan `201`. Jalankan request yang sama sekali
+lagi dan pastikan hasilnya `200` dengan ID yang sama. Kemudian jalankan arah
+kebalikannya dari sisi Bob:
+
+```bash
+curl -i \
+  -X POST http://127.0.0.1:28080/conversations/direct \
+  -H "Authorization: Bearer ${BOB_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d "{\"recipient_username\":\"${ALICE_USERNAME}\"}"
+```
+
+Request Bob juga harus menghasilkan `200` dengan ID yang sama. Simpan ID
+tersebut untuk pemeriksaan data:
+
+```bash
+read "CONVERSATION_ID?Conversation ID: "
+```
+
+Periksa daftar dari kedua sisi:
+
+```bash
+curl -i \
+  -H "Authorization: Bearer ${ALICE_TOKEN}" \
+  http://127.0.0.1:28080/conversations
+
+curl -i \
+  -H "Authorization: Bearer ${BOB_TOKEN}" \
+  http://127.0.0.1:28080/conversations
+```
+
+Periksa tiga error utama:
+
+```bash
+# Chat dengan diri sendiri: 409 Conflict
+curl -i \
+  -X POST http://127.0.0.1:28080/conversations/direct \
+  -H "Authorization: Bearer ${ALICE_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d "{\"recipient_username\":\"${ALICE_USERNAME}\"}"
+
+# Username valid tetapi tidak terdaftar: 404 Not Found
+curl -i \
+  -X POST http://127.0.0.1:28080/conversations/direct \
+  -H "Authorization: Bearer ${ALICE_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d "{\"recipient_username\":\"missing_${MINI_CHAT_RUN_ID}\"}"
+
+# Daftar conversation tanpa token: 401 Unauthorized
+curl -i http://127.0.0.1:28080/conversations
+```
+
+Checklist hasil:
+
+- kedua daftar memakai ID conversation yang sama;
+- daftar Alice menampilkan Bob sebagai `participant` dan sebaliknya;
+- response tidak memuat password atau hash;
+- create dengan username sendiri menghasilkan `409`;
+- recipient yang tidak ada menghasilkan `404`;
+- request tanpa token menghasilkan `401`.
+
+Dari folder `docker`, pastikan conversation mempunyai tepat dua membership:
+
+```bash
+docker compose exec -T postgres \
+  psql -U mini_chat -d mini_chat -c "
+    SELECT i.username, cm.role
+    FROM conversation_member AS cm
+    JOIN identity AS i ON i.id = cm.identity_id
+    WHERE cm.conversation_id = ${CONVERSATION_ID}
+    ORDER BY cm.role, i.username;
+  "
+```
+
+Hasilnya harus memuat dua row: pembuat pertama sebagai `owner` dan pengguna
+lainnya sebagai `member`. Bersihkan variable sementara setelah selesai:
+
+```bash
+unset ALICE_TOKEN BOB_TOKEN ALICE_USERNAME BOB_USERNAME
+unset MINI_CHAT_E2E_PASSWORD MINI_CHAT_RUN_ID CONVERSATION_ID
+```
+
 ## Development rules
 
 - Satu commit untuk satu milestone yang selesai.

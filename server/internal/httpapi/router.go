@@ -6,10 +6,12 @@ import (
 )
 
 type Dependencies struct {
-	Register            Registerer
-	Login               LoginUseCase
-	AccessTokenVerifier AccessTokenVerifier
-	CurrentUser         CurrentUserUseCase
+	Register                 Registerer
+	Login                    LoginUseCase
+	AccessTokenVerifier      AccessTokenVerifier
+	CurrentUser              CurrentUserUseCase
+	CreateDirectConversation CreateDirectConversationUseCase
+	ListConversations        ListConversationsUseCase
 }
 
 type healthResponse struct {
@@ -58,6 +60,32 @@ func NewHandlerWithDependencies(
 				dependencies.AccessTokenVerifier,
 				newCurrentUserHandler(
 					dependencies.CurrentUser,
+				),
+			),
+		)
+	}
+
+	if dependencies.AccessTokenVerifier != nil &&
+		dependencies.CreateDirectConversation != nil {
+		mux.Handle(
+			"POST /conversations/direct",
+			requireAuthentication(
+				dependencies.AccessTokenVerifier,
+				newCreateDirectConversationHandler(
+					dependencies.CreateDirectConversation,
+				),
+			),
+		)
+	}
+
+	if dependencies.AccessTokenVerifier != nil &&
+		dependencies.ListConversations != nil {
+		mux.Handle(
+			"GET /conversations",
+			requireAuthentication(
+				dependencies.AccessTokenVerifier,
+				newListConversationsHandler(
+					dependencies.ListConversations,
 				),
 			),
 		)

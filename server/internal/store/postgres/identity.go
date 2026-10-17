@@ -40,6 +40,16 @@ SELECT
 FROM identity
 WHERE username = $1
 `
+	findPublicIdentityByUsernameQuery = `
+SELECT
+    id,
+    username,
+    display_name,
+    created_at,
+    updated_at
+FROM identity
+WHERE username = $1
+`
 	findIdentityByIDQuery = `
 SELECT
     id,
@@ -156,6 +166,41 @@ func (
 	}
 
 	return result, passwordHash, nil
+}
+
+func (
+	store *IdentityStore,
+) FindPublicIdentityByUsername(
+	ctx context.Context,
+	username string,
+) (identity.Identity, error) {
+	var result identity.Identity
+
+	err := store.db.QueryRow(
+		ctx,
+		findPublicIdentityByUsernameQuery,
+		username,
+	).Scan(
+		&result.ID,
+		&result.Username,
+		&result.DisplayName,
+		&result.CreatedAt,
+		&result.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return identity.Identity{}, fmt.Errorf(
+			"find public identity by username: %w",
+			identity.ErrNotFound,
+		)
+	}
+	if err != nil {
+		return identity.Identity{}, fmt.Errorf(
+			"find public identity by username: %w",
+			err,
+		)
+	}
+
+	return result, nil
 }
 
 func (

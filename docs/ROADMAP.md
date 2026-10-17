@@ -12,12 +12,12 @@ satu commit.
 - [x] Step 4: membuat migration identity, conversation, member, dan message
 - [x] Step 5: membuat register, Argon2id password hashing, dan persistence
 - [x] Step 6: membuat login, JWT authentication, dan current-user endpoint
-- [ ] Step 7: membuat direct conversation serta HTTP send/history message
+- [x] Step 7: membuat dan melihat daftar direct conversation
 
-## Hari 2 — Realtime
+## Hari 2 — HTTP message dan realtime
 
-- [ ] Step 8: membuat authenticated WebSocket hub
-- [ ] Step 9: membuat Redis publisher dan subscriber
+- [ ] Step 8: membuat HTTP send message dan message history
+- [ ] Step 9: membuat authenticated WebSocket hub dan Redis Pub/Sub
 - [ ] Step 10: meneruskan message-created event ke penerima melalui WebSocket
 - [ ] Step 11: membuat reconnect dan missed-message recovery
 - [ ] Step 12: menguji realtime menggunakan Alice dan Bob

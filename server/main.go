@@ -12,7 +12,9 @@ import (
 	"syscall"
 	"time"
 
+	createdirectapp "github.com/imamsyafii-dev/mini-chat/server/internal/app/createdirect"
 	currentuserapp "github.com/imamsyafii-dev/mini-chat/server/internal/app/currentuser"
+	listconversationsapp "github.com/imamsyafii-dev/mini-chat/server/internal/app/listconversations"
 	loginapp "github.com/imamsyafii-dev/mini-chat/server/internal/app/login"
 	registerapp "github.com/imamsyafii-dev/mini-chat/server/internal/app/register"
 	"github.com/imamsyafii-dev/mini-chat/server/internal/config"
@@ -88,6 +90,10 @@ func run() error {
 		postgresstore.NewIdentityStore(
 			database,
 		)
+	conversationStore :=
+		postgresstore.NewConversationStore(
+			database,
+		)
 	passwordHasher :=
 		password.NewArgon2IDHasher()
 	registerUseCase := registerapp.New(
@@ -102,13 +108,24 @@ func run() error {
 	currentUserUseCase := currentuserapp.New(
 		identityStore,
 	)
+	createDirectConversationUseCase :=
+		createdirectapp.New(
+			identityStore,
+			conversationStore,
+		)
+	listConversationsUseCase :=
+		listconversationsapp.New(
+			conversationStore,
+		)
 	handler :=
 		httpapi.NewHandlerWithDependencies(
 			httpapi.Dependencies{
-				Register:            registerUseCase,
-				Login:               loginUseCase,
-				AccessTokenVerifier: tokenManager,
-				CurrentUser:         currentUserUseCase,
+				Register:                 registerUseCase,
+				Login:                    loginUseCase,
+				AccessTokenVerifier:      tokenManager,
+				CurrentUser:              currentUserUseCase,
+				CreateDirectConversation: createDirectConversationUseCase,
+				ListConversations:        listConversationsUseCase,
 			},
 		)
 

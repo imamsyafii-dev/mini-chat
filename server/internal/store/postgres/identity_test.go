@@ -342,6 +342,148 @@ func TestIdentityStorePreservesFindDatabaseError(
 	}
 }
 
+func TestIdentityStoreFindPublicIdentityByUsername(
+	t *testing.T,
+) {
+	now := time.Date(
+		2026,
+		time.October,
+		16,
+		13,
+		0,
+		0,
+		0,
+		time.UTC,
+	)
+	database := &fakeQuerier{
+		row: fakeRow{
+			scan: func(
+				destinations ...any,
+			) error {
+				*destinations[0].(*int64) = 3
+				*destinations[1].(*string) = "bob"
+				*destinations[2].(*string) = "Bob Example"
+				*destinations[3].(*time.Time) = now
+				*destinations[4].(*time.Time) = now
+
+				return nil
+			},
+		},
+	}
+	store := NewIdentityStore(database)
+
+	result, err := store.FindPublicIdentityByUsername(
+		context.Background(),
+		" Bob_Mixed ",
+	)
+	if err != nil {
+		t.Fatalf(
+			"FindPublicIdentityByUsername() error = %v, want nil",
+			err,
+		)
+	}
+
+	expected := identity.Identity{
+		ID:          3,
+		Username:    "bob",
+		DisplayName: "Bob Example",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if result != expected {
+		t.Errorf(
+			"result = %#v, want %#v",
+			result,
+			expected,
+		)
+	}
+	if !strings.Contains(
+		database.query,
+		"WHERE username = $1",
+	) {
+		t.Errorf(
+			"query = %q, want public identity lookup by username",
+			database.query,
+		)
+	}
+	if strings.Contains(
+		database.query,
+		"password_hash",
+	) {
+		t.Errorf(
+			"query = %q, must not select password_hash",
+			database.query,
+		)
+	}
+
+	expectedArgs := []any{" Bob_Mixed "}
+	if !reflect.DeepEqual(database.args, expectedArgs) {
+		t.Errorf(
+			"args = %#v, want %#v",
+			database.args,
+			expectedArgs,
+		)
+	}
+}
+
+func TestIdentityStoreFindPublicIdentityByUsernameMapsMissingIdentity(
+	t *testing.T,
+) {
+	database := &fakeQuerier{
+		row: fakeRow{
+			scan: func(...any) error {
+				return pgx.ErrNoRows
+			},
+		},
+	}
+	store := NewIdentityStore(database)
+
+	_, err := store.FindPublicIdentityByUsername(
+		context.Background(),
+		"missing-user",
+	)
+	if !errors.Is(err, identity.ErrNotFound) {
+		t.Fatalf(
+			"FindPublicIdentityByUsername() error = %v, want wrapped %v",
+			err,
+			identity.ErrNotFound,
+		)
+	}
+}
+
+func TestIdentityStoreFindPublicIdentityByUsernamePreservesDatabaseError(
+	t *testing.T,
+) {
+	databaseError := errors.New("database unavailable")
+	database := &fakeQuerier{
+		row: fakeRow{
+			scan: func(...any) error {
+				return databaseError
+			},
+		},
+	}
+	store := NewIdentityStore(database)
+
+	_, err := store.FindPublicIdentityByUsername(
+		context.Background(),
+		"bob",
+	)
+	if !errors.Is(err, databaseError) {
+		t.Fatalf(
+			"FindPublicIdentityByUsername() error = %v, want wrapped %v",
+			err,
+			databaseError,
+		)
+	}
+	if errors.Is(err, identity.ErrNotFound) {
+		t.Fatalf(
+			"FindPublicIdentityByUsername() error = %v, must not map to %v",
+			err,
+			identity.ErrNotFound,
+		)
+	}
+}
+
 func TestIdentityStoreFindIdentityByID(
 	t *testing.T,
 ) {

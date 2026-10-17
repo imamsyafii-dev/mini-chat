@@ -6,6 +6,46 @@ import (
 	"testing"
 )
 
+func TestNormalizeUsernameTrimsAndLowercases(
+	t *testing.T,
+) {
+	result, err := NormalizeUsername(
+		"  Alice_01  ",
+	)
+	if err != nil {
+		t.Fatalf(
+			"NormalizeUsername() error = %v, want nil",
+			err,
+		)
+	}
+
+	if result != "alice_01" {
+		t.Errorf(
+			"NormalizeUsername() = %q, want %q",
+			result,
+			"alice_01",
+		)
+	}
+}
+
+func TestNormalizeUsernameRejectsInvalidUsername(
+	t *testing.T,
+) {
+	_, err := NormalizeUsername(
+		"alice.smith",
+	)
+	if !errors.Is(
+		err,
+		ErrUsernameInvalid,
+	) {
+		t.Fatalf(
+			"NormalizeUsername() error = %v, want %v",
+			err,
+			ErrUsernameInvalid,
+		)
+	}
+}
+
 func TestNewRegistrationNormalizesInput(
 	t *testing.T,
 ) {
