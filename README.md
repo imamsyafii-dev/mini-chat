@@ -536,9 +536,10 @@ kompleks.
 
 ## Direct conversation
 
-Step 7 menyediakan pembuatan dan daftar direct conversation. Scope ini belum
-mencakup pengiriman pesan, riwayat pesan, Redis, atau WebSocket; fitur tersebut
-baru ditambahkan pada step berikutnya.
+Step 7 menyediakan pembuatan dan daftar direct conversation. Direct
+conversation adalah wadah yang menghubungkan tepat dua identity; isi chat di
+dalam wadah tersebut berupa message yang ditambahkan pada Step 8. Redis,
+WebSocket, dan pengiriman realtime belum digunakan pada kedua step ini.
 
 ### Model data dan aturan domain
 
@@ -677,8 +678,9 @@ bicara dari pengguna yang sedang login:
 
 Jika belum ada conversation, response adalah `[]`, bukan `null`. Server
 mengambil maksimal 50 conversation dengan urutan `updated_at DESC, id DESC`.
-Pada Step 7, `updated_at` belum menunjukkan aktivitas pesan terbaru karena
-message baru dibuat pada Step 8. Endpoint ini juga belum memiliki pagination.
+Sejak Step 8, setiap message yang berhasil disimpan juga memperbarui
+`conversation.updated_at`, sehingga conversation dengan aktivitas pesan terbaru
+berada di bagian awal daftar. Endpoint ini belum memiliki pagination.
 
 ### Pengujian manual Step 7
 
@@ -815,12 +817,257 @@ docker compose exec -T postgres \
 ```
 
 Hasilnya harus memuat dua row: pembuat pertama sebagai `owner` dan pengguna
-lainnya sebagai `member`. Bersihkan variable sementara setelah selesai:
+lainnya sebagai `member`. Pertahankan variable pengujian karena akan langsung
+digunakan kembali pada Step 8.
+
+## HTTP message dan history
+
+Step 8 menambahkan isi chat ke direct conversation yang dibuat pada Step 7.
+Perbedaannya adalah:
+
+```text
+direct conversation = wadah chat dan daftar anggotanya
+message             = satu isi chat di dalam wadah tersebut
+```
+
+Message yang sudah tersimpan mempunyai field berikut:
+
+| Field | Isi |
+|---|---|
+| `id` | ID message dari PostgreSQL |
+| `conversation_id` | ID wadah conversation |
+| `sender_id` | ID identity pengirim dari JWT Principal |
+| `body` | Isi pesan yang sudah divalidasi domain |
+| `created_at` | Waktu message disimpan |
+
+Client tidak dapat menentukan `sender_id` sendiri. Authentication middleware
+memverifikasi Bearer token, lalu menaruh identity ID pada `Principal` di request
+context. Alur dependency lengkapnya adalah:
+
+```text
+Bearer token
+  → authentication middleware
+  → Principal berisi identity ID
+  → send-message atau list-messages use case
+  → satu MessageStore yang dipakai bersama
+  → PostgreSQL
+```
+
+### Aturan domain message
+
+Body dirapikan dengan `TrimSpace`, sehingga spasi dan baris kosong di awal atau
+akhir dibuang. Isi di tengah message tetap dipertahankan. Setelah dirapikan,
+body wajib berukuran 1–4.000 karakter Unicode (rune), bukan sekadar 4.000 byte.
+Conversation ID dan sender ID juga wajib berupa bilangan bulat positif.
+
+### Mengirim message
+
+Endpoint berikut memerlukan access token dan membership pada conversation:
+
+```text
+POST /conversations/{conversationID}/messages
+Authorization: Bearer <access-token>
+Content-Type: application/json
+```
+
+Request hanya menerima field `body`:
+
+```json
+{
+  "body": "Hello Bob"
+}
+```
+
+Message yang berhasil disimpan menghasilkan `201 Created`:
+
+```json
+{
+  "id": 101,
+  "conversation_id": 10,
+  "sender_id": 1,
+  "body": "Hello Bob",
+  "created_at": "2026-10-17T09:00:00Z"
+}
+```
+
+Pengiriman message menggunakan satu transaction PostgreSQL:
+
+```text
+BEGIN
+  → pastikan sender adalah member dan lock conversation
+  → INSERT message
+  → UPDATE conversation.updated_at dengan waktu message
+COMMIT
+```
+
+Jika salah satu operasi sebelum commit gagal, seluruh transaction di-rollback.
+Dengan demikian tidak ada keadaan message tersimpan tanpa memperbarui waktu
+conversation, atau waktu conversation berubah tanpa message. Update memakai
+`GREATEST`, sehingga waktu aktivitas tidak bergerak mundur ketika beberapa
+pengiriman terjadi bersamaan.
+
+Status response endpoint send:
+
+| Status | Kondisi |
+|---|---|
+| `201 Created` | Message berhasil disimpan |
+| `400 Bad Request` | Conversation ID, JSON, field request, atau body tidak valid |
+| `401 Unauthorized` | Bearer token hilang atau tidak valid |
+| `404 Not Found` | Conversation tidak ada atau pengirim bukan member |
+| `413 Request Entity Too Large` | Body request lebih dari 64 KiB |
+| `415 Unsupported Media Type` | `Content-Type` bukan `application/json` |
+| `500 Internal Server Error` | Kegagalan internal yang tidak aman dijelaskan ke client |
+
+### Mengambil message history
+
+Halaman pertama:
+
+```text
+GET /conversations/{conversationID}/messages
+Authorization: Bearer <access-token>
+```
+
+Contoh response `200 OK` untuk halaman pertama berikut dipersingkat agar mudah
+dibaca. Message dengan ID `52`–`99` tidak ditampilkan pada potongan JSON;
+response sebenarnya berisi 50 message ketika `next_before_id` tersedia:
+
+```json
+{
+  "messages": [
+    {
+      "id": 51,
+      "conversation_id": 10,
+      "sender_id": 1,
+      "body": "Pesan lama",
+      "created_at": "2026-10-17T09:00:00Z"
+    },
+    {
+      "id": 100,
+      "conversation_id": 10,
+      "sender_id": 2,
+      "body": "Pesan baru",
+      "created_at": "2026-10-17T09:10:00Z"
+    }
+  ],
+  "next_before_id": 51
+}
+```
+
+Karena response tersebut mempunyai `next_before_id` bernilai `51`, halaman
+yang lebih lama diminta menggunakan cursor positif itu:
+
+```text
+GET /conversations/{conversationID}/messages?before_id=51
+Authorization: Bearer <access-token>
+```
+
+Request lanjutan hanya mengambil message dengan ID lebih kecil dari `51`.
+
+Store meminta 51 row dengan urutan ID terbaru terlebih dahulu. Use case
+mengembalikan maksimal 50 message, membalik hasil menjadi urutan lama → baru
+agar mudah ditampilkan client, dan memakai ID message tertua yang masih
+dikembalikan sebagai `next_before_id`. Request berikutnya memakai cursor itu dan
+mengambil message dengan `id < before_id`, sehingga tidak ada message yang
+terlewat atau dikirim dua kali. Jika tidak ada halaman berikutnya,
+`next_before_id` bernilai `null`.
+
+History kosong selalu berbentuk array kosong, bukan `null`:
+
+```json
+{
+  "messages": [],
+  "next_before_id": null
+}
+```
+
+Status response endpoint history:
+
+| Status | Kondisi |
+|---|---|
+| `200 OK` | History berhasil diambil, termasuk ketika kosong |
+| `400 Bad Request` | Conversation ID atau `before_id` tidak valid |
+| `401 Unauthorized` | Bearer token hilang atau tidak valid |
+| `404 Not Found` | Conversation tidak ada atau pembaca bukan member |
+| `500 Internal Server Error` | Kegagalan internal yang tidak aman dijelaskan ke client |
+
+Baik send maupun history selalu memeriksa `conversation_member`. Conversation
+yang tidak ada dan conversation yang ada tetapi tidak boleh diakses sengaja
+menghasilkan response yang sama:
+
+```text
+HTTP/1.1 404 Not Found
+```
+
+```json
+{"error":"conversation is unavailable"}
+```
+
+Penyamaan response ini mencegah pengguna menebak keberadaan conversation yang
+bukan miliknya.
+
+### Pengujian manual Step 8
+
+Gunakan `ALICE_TOKEN`, `BOB_TOKEN`, dan `CONVERSATION_ID` yang masih tersimpan
+dari pengujian Step 7. Kirim message sebagai Alice:
+
+```bash
+curl -i \
+  -X POST "http://127.0.0.1:28080/conversations/${CONVERSATION_ID}/messages" \
+  -H "Authorization: Bearer ${ALICE_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"body":"Hello Bob from Step 8"}'
+```
+
+Ambil history sebagai Bob, lalu kirim balasan:
+
+```bash
+curl -i \
+  -H "Authorization: Bearer ${BOB_TOKEN}" \
+  "http://127.0.0.1:28080/conversations/${CONVERSATION_ID}/messages"
+
+curl -i \
+  -X POST "http://127.0.0.1:28080/conversations/${CONVERSATION_ID}/messages" \
+  -H "Authorization: Bearer ${BOB_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"body":"Hello Alice from Step 8"}'
+```
+
+Ambil kembali history sebagai Alice dan pastikan urutannya lama → baru:
+
+```bash
+curl -i \
+  -H "Authorization: Bearer ${ALICE_TOKEN}" \
+  "http://127.0.0.1:28080/conversations/${CONVERSATION_ID}/messages"
+```
+
+Checklist E2E:
+
+- send Alice dan Bob masing-masing menghasilkan `201 Created`;
+- `sender_id` selalu berasal dari identity pada token;
+- Alice dan Bob melihat message yang sama dalam urutan lama → baru;
+- body dengan spasi luar disimpan dalam bentuk yang sudah di-trim;
+- body kosong atau lebih dari 4.000 rune menghasilkan `400 Bad Request`;
+- `before_id` nol, negatif, teks, kosong, atau dikirim lebih dari sekali
+  menghasilkan `400 Bad Request`;
+- request tanpa token menghasilkan `401 Unauthorized`;
+- identity ketiga yang bukan member mendapat `404 Not Found` untuk send dan
+  history, sama seperti conversation yang tidak ada;
+- setelah server dihentikan dan dijalankan kembali, history yang sama masih
+  tersedia karena PostgreSQL adalah sumber data permanen;
+- daftar `GET /conversations` menempatkan conversation yang baru menerima
+  message lebih awal berdasarkan `updated_at`.
+
+Setelah seluruh pengujian Step 8 selesai, bersihkan variable sementara:
 
 ```bash
 unset ALICE_TOKEN BOB_TOKEN ALICE_USERNAME BOB_USERNAME
 unset MINI_CHAT_E2E_PASSWORD MINI_CHAT_RUN_ID CONVERSATION_ID
 ```
+
+Step 8 hanya menyediakan send dan history melalui HTTP serta penyimpanan
+permanen PostgreSQL. Message belum didorong otomatis ke client lain. Redis,
+authenticated WebSocket, event realtime, reconnect, dan missed-message
+recovery mulai dikerjakan pada Step 9 dan milestone setelahnya.
 
 ## Development rules
 

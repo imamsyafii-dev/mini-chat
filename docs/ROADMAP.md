@@ -16,7 +16,7 @@ satu commit.
 
 ## Hari 2 — HTTP message dan realtime
 
-- [ ] Step 8: membuat HTTP send message dan message history
+- [x] Step 8: membuat HTTP send message dan message history
 - [ ] Step 9: membuat authenticated WebSocket hub dan Redis Pub/Sub
 - [ ] Step 10: meneruskan message-created event ke penerima melalui WebSocket
 - [ ] Step 11: membuat reconnect dan missed-message recovery

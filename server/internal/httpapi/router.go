@@ -12,6 +12,8 @@ type Dependencies struct {
 	CurrentUser              CurrentUserUseCase
 	CreateDirectConversation CreateDirectConversationUseCase
 	ListConversations        ListConversationsUseCase
+	SendMessage              SendMessageUseCase
+	ListMessages             ListMessagesUseCase
 }
 
 type healthResponse struct {
@@ -86,6 +88,32 @@ func NewHandlerWithDependencies(
 				dependencies.AccessTokenVerifier,
 				newListConversationsHandler(
 					dependencies.ListConversations,
+				),
+			),
+		)
+	}
+
+	if dependencies.AccessTokenVerifier != nil &&
+		dependencies.SendMessage != nil {
+		mux.Handle(
+			"POST /conversations/{conversationID}/messages",
+			requireAuthentication(
+				dependencies.AccessTokenVerifier,
+				newSendMessageHandler(
+					dependencies.SendMessage,
+				),
+			),
+		)
+	}
+
+	if dependencies.AccessTokenVerifier != nil &&
+		dependencies.ListMessages != nil {
+		mux.Handle(
+			"GET /conversations/{conversationID}/messages",
+			requireAuthentication(
+				dependencies.AccessTokenVerifier,
+				newListMessagesHandler(
+					dependencies.ListMessages,
 				),
 			),
 		)

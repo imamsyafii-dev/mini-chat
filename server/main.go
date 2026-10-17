@@ -15,8 +15,10 @@ import (
 	createdirectapp "github.com/imamsyafii-dev/mini-chat/server/internal/app/createdirect"
 	currentuserapp "github.com/imamsyafii-dev/mini-chat/server/internal/app/currentuser"
 	listconversationsapp "github.com/imamsyafii-dev/mini-chat/server/internal/app/listconversations"
+	listmessagesapp "github.com/imamsyafii-dev/mini-chat/server/internal/app/listmessages"
 	loginapp "github.com/imamsyafii-dev/mini-chat/server/internal/app/login"
 	registerapp "github.com/imamsyafii-dev/mini-chat/server/internal/app/register"
+	sendmessageapp "github.com/imamsyafii-dev/mini-chat/server/internal/app/sendmessage"
 	"github.com/imamsyafii-dev/mini-chat/server/internal/config"
 	"github.com/imamsyafii-dev/mini-chat/server/internal/httpapi"
 	"github.com/imamsyafii-dev/mini-chat/server/internal/security/password"
@@ -94,6 +96,10 @@ func run() error {
 		postgresstore.NewConversationStore(
 			database,
 		)
+	messageStore :=
+		postgresstore.NewMessageStore(
+			database,
+		)
 	passwordHasher :=
 		password.NewArgon2IDHasher()
 	registerUseCase := registerapp.New(
@@ -117,6 +123,14 @@ func run() error {
 		listconversationsapp.New(
 			conversationStore,
 		)
+	sendMessageUseCase :=
+		sendmessageapp.New(
+			messageStore,
+		)
+	listMessagesUseCase :=
+		listmessagesapp.New(
+			messageStore,
+		)
 	handler :=
 		httpapi.NewHandlerWithDependencies(
 			httpapi.Dependencies{
@@ -126,6 +140,8 @@ func run() error {
 				CurrentUser:              currentUserUseCase,
 				CreateDirectConversation: createDirectConversationUseCase,
 				ListConversations:        listConversationsUseCase,
+				SendMessage:              sendMessageUseCase,
+				ListMessages:             listMessagesUseCase,
 			},
 		)
 
